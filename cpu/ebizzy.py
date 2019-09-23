@@ -36,6 +36,8 @@ class Ebizzy(Test):
     ebizzy is designed to generate a workload resembling common web application
     server workloads. It is highly threaded, has a large in-memory working set,
     and allocates and deallocates memory frequently.
+
+    :avocado: tags=cpu
     '''
 
     def setUp(self):
@@ -46,23 +48,23 @@ class Ebizzy(Test):
         /ebizzy-0.3.tar.gz
         '''
         sm = SoftwareManager()
-        if not sm.check_installed("gcc") and not sm.install("gcc"):
-            self.error("Gcc is needed for the test to be run")
+        for package in ['gcc', 'make', 'patch']:
+            if not sm.check_installed(package) and not sm.install(package):
+                self.cancel("%s is needed for the test to be run" % package)
         tarball = self.fetch_asset('http://liquidtelecom.dl.sourceforge.net'
                                    '/project/ebizzy/ebizzy/0.3'
                                    '/ebizzy-0.3.tar.gz')
-        data_dir = os.path.abspath(self.datadir)
-        archive.extract(tarball, self.srcdir)
+        archive.extract(tarball, self.workdir)
         version = os.path.basename(tarball.split('.tar.')[0])
-        self.srcdir = os.path.join(self.srcdir, version)
+        self.sourcedir = os.path.join(self.workdir, version)
 
         patch = self.params.get(
             'patch', default='Fix-build-issues-with-ebizzy.patch')
-        os.chdir(self.srcdir)
-        p1 = 'patch -p0 < %s/%s' % (data_dir, patch)
+        os.chdir(self.sourcedir)
+        p1 = 'patch -p0 < %s' % (self.get_data(patch))
         process.run(p1, shell=True)
         process.run('[ -x configure ] && ./configure', shell=True)
-        build.make(self.srcdir)
+        build.make(self.sourcedir)
 
     # Note: default we use always mmap()
     def test(self):
@@ -72,12 +74,12 @@ class Ebizzy(Test):
         chunk_size = self.params.get('chunk_size', default=512000)
         seconds = self.params.get('seconds', default=100)
         num_threads = self.params.get('num_threads', default=100)
-        logfile = os.path.join(self.outputdir, 'ebizzy.log')
         args2 = '-m -n %s -P -R -s %s -S %s -t %s' % (num_chunks, chunk_size,
                                                       seconds, num_threads)
         args = args + ' ' + args2
 
-        results = process.system_output('%s/ebizzy %s' % (self.srcdir, args))
+        results = process.system_output('%s/ebizzy %s'
+                                        % (self.sourcedir, args)).decode("utf-8")
         pattern = re.compile(r"(.*?) records/s")
         records = pattern.findall(results)[0]
         pattern = re.compile(r"real (.*?) s")
@@ -86,11 +88,11 @@ class Ebizzy(Test):
         usr_time = pattern.findall(results)[0]
         pattern = re.compile(r"sys (.*?) s")
         sys_time = pattern.findall(results)[0]
+        self.whiteboard = json.dumps({'records': records,
+                                      'real_time': real,
+                                      'user': usr_time,
+                                      'sys': sys_time})
 
-        perf_json = {'records': records, 'real_time':
-                     real, 'user': usr_time, 'sys': sys_time}
-        output_path = os.path.join(self.outputdir, "perf.json")
-        json.dump(perf_json, open(output_path, "w"))
 
 if __name__ == "__main__":
     main()

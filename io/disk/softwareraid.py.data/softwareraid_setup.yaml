@@ -1,0 +1,8 @@
+disks:
+raidname: /dev/md/avocado
+setup: True
+run_test: False
+cleanup: False
+force: True
+raid: 1
+metadata: 1.2

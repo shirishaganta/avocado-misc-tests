@@ -1,2 +1,4 @@
-inspektor==0.2.2
-pep8==1.6.2
+pycodestyle==2.4.0
+inspektor==0.5.2
+pep8==1.7.1
+pylint==1.9.3

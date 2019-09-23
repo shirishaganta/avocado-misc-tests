@@ -43,15 +43,17 @@ class Stress(Test):
         """
         Build 'stress'.
         Source:
-         http://people.seas.harvard.edu/~apw/stress/stress-1.0.4.tar.gz
+         https://fossies.org/linux/privat/stress-1.0.4.tar.gz
         """
-        tarball = self.fetch_asset('http://people.seas.harvard.edu/~apw/stress/stress-1.0.4.tar.gz')
-        archive.extract(tarball, self.srcdir)
+        tarball = self.fetch_asset(
+            'https://fossies.org/linux/privat/stress-1.0.4.tar.gz',
+            expire='7d')
+        archive.extract(tarball, self.workdir)
         stress_version = os.path.basename(tarball.split('.tar.')[0])
-        self.srcdir = os.path.join(self.srcdir, stress_version)
-        os.chdir(self.srcdir)
+        self.sourcedir = os.path.join(self.workdir, stress_version)
+        os.chdir(self.sourcedir)
         process.run('./configure')
-        build.make(self.srcdir)
+        build.make(self.sourcedir)
 
     def test(self):
         """
@@ -68,17 +70,17 @@ class Stress(Test):
 
         if memory_per_thread is None:
             # Sometimes the default memory used by each memory worker (256 M)
-            # might make our machine go OOM and then funny things might start to
-            # happen. Let's avoid that.
-            mb = (memory.freememtotal() +
-                  memory.read_from_meminfo('SwapFree') / 2)
+            # might make our machine go OOM and then funny things might start
+            # to  happen. Let's avoid that.
+            mb = (memory.meminfo.MemFree.k +
+                  memory.meminfo.SwapFree.k / 2)
             memory_per_thread = (mb * 1024) / threads
 
         if file_size_per_thread is None:
             # Even though unlikely, it's good to prevent from allocating more
             # disk than this machine actually has on its autotest directory
             # (limit the amount of disk used to max of 90 % of free space)
-            free_disk = disk.freespace(self.srcdir)
+            free_disk = disk.freespace(self.sourcedir)
             file_size_per_thread = 1024 ** 2
             if (0.9 * free_disk) < file_size_per_thread * threads:
                 file_size_per_thread = (0.9 * free_disk) / threads
@@ -100,9 +102,10 @@ class Stress(Test):
         # Verbose flag
         args += '--verbose'
 
-        os.chdir(self.srcdir)
+        os.chdir(self.sourcedir)
         cmd = ('./src/stress %s' % args)
         process.run(cmd)
+
 
 if __name__ == "__main__":
     main()

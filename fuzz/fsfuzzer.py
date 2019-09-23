@@ -46,22 +46,30 @@ class Fsfuzzer(Test):
         https://github.com/stevegrubb/fsfuzzer.git
         '''
         detected_distro = distro.detect()
+        d_name = detected_distro.name.lower()
 
         smm = SoftwareManager()
+        deps = ['gcc', 'patch', 'libtool', 'autoconf', 'automake', 'make']
+        if d_name == 'ubuntu':
+            deps.extend(['libattr1-dev'])
+        else:
+            deps.extend(['libattr-devel'])
 
-        if not smm.check_installed("gcc") and not smm.install("gcc"):
-            self.error("Gcc is needed for the test to be run")
+        for package in deps:
+            if not smm.check_installed(package) and not smm.install(package):
+                self.cancel("Fail to install/check %s, which is needed for"
+                            "fsfuzz to run" % package)
 
         locations = ["https://github.com/stevegrubb/fsfuzzer/archive/"
                      "master.zip"]
         tarball = self.fetch_asset("fsfuzzer.zip", locations=locations)
-        archive.extract(tarball, self.srcdir)
-        os.chdir(os.path.join(self.srcdir, "fsfuzzer-master"))
+        archive.extract(tarball, self.workdir)
+        os.chdir(os.path.join(self.workdir, "fsfuzzer-master"))
 
-        if detected_distro.name == "Ubuntu":
+        if d_name == "ubuntu":
             # Patch for ubuntu
-            fuzz_fix_patch = 'patch -p1 < %s' % (
-                os.path.join(self.datadir, 'fsfuzz_fix.patch'))
+            fuzz_fix_patch = 'patch -p1 < %s' % self.get_data(
+                'fsfuzz_fix.patch')
             if process.system(fuzz_fix_patch, shell=True, ignore_status=True):
                 self.log.warn("Unable to apply sh->bash patch!")
 
@@ -73,18 +81,23 @@ class Fsfuzzer(Test):
         self._args = self.params.get('fstype', default='')
         self._fsfuzz = os.path.abspath(os.path.join('.', "fsfuzz"))
         fs_sup = process.system_output('%s %s' % (self._fsfuzz, ' --help'))
-        match = re.search(r'%s' % self._args, fs_sup, re.M | re.I)
+        match = re.search(br'%s' % self._args, fs_sup, re.M | re.I)
         if not match:
-            self.skip('File system ' + self._args +
-                      ' is unsupported in ' + detected_distro.name)
+            self.cancel('File system ' + self._args +
+                        ' is unsupported in ' + detected_distro.name)
 
     def test(self):
-
         '''
         Runs the fsfuzz test suite. By default uses all supported fstypes,
         but you can specify only one by `fstype` param.
+
+        ##TODO need add valid failure check for test
         '''
-        process.system("%s %s" % (self._fsfuzz, self._args), sudo=True)
+
+        if process.system("%s %s" % (self._fsfuzz, self._args), sudo=True,
+                          ignore_status=True):
+            self.fail("fs_fuzzer command return as non zero exit code ")
+
 
 if __name__ == "__main__":
     main()

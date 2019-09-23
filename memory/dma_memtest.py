@@ -24,6 +24,7 @@ import shutil
 import re
 from avocado import Test
 from avocado.utils import process
+from avocado.utils import disk
 from avocado.utils import archive
 from avocado.core import data_dir
 
@@ -37,6 +38,8 @@ class DmaMemtest(Test):
     It will uncompress several copies of the linux kernel in a way that will
     force the system to go swap, then will compare the trees generated for
     differences.
+
+    :avocado: tags=memory,privileged
     """
 
     def setUp(self):
@@ -46,6 +49,9 @@ class DmaMemtest(Test):
         copies of the linux kernel that will be uncompressed.
         """
         self.nfail = 0
+        self.tmpdir = data_dir.get_tmp_dir()
+        self.tmpdir = self.params.get('dir_to_extract', default=self.tmpdir)
+        self.base_dir = os.path.join(self.tmpdir, 'linux.orig')
         tarball_base = self.params.get('tarball_base',
                                        default='linux-2.6.18.tar.bz2')
         kernel_repo = self.params.get('kernel_repo',
@@ -73,6 +79,13 @@ class DmaMemtest(Test):
         self.log.info('Number of copies: %s', self.sim_cps)
         self.log.info('Parallel: %s', parallel)
 
+        # Verify if space is available in disk
+        disk_free_mb = (disk.freespace(self.tmpdir) / 1024) / 1024
+        if disk_free_mb < (est_size * self.sim_cps):
+            self.cancel("Space not available to extract the %s linux tars\n"
+                        "Mount and Use other partitions in dir_to_extract arg "
+                        "to run the test" % self.sim_cps)
+
     @staticmethod
     def get_sim_cps(est_size):
         '''
@@ -82,7 +95,7 @@ class DmaMemtest(Test):
            :param est_size: Estimated size of uncompressed linux tarball
         '''
         mem_str = process.system_output('grep MemTotal /proc/meminfo')
-        mem = int(re.search(r'\d+', mem_str).group(0))
+        mem = int(re.search(r'\d+', mem_str.decode()).group(0))
         mem = int(mem / 1024)
         sim_cps = (1.5 * mem) / est_size
 
@@ -96,18 +109,17 @@ class DmaMemtest(Test):
 
     def test(self):
         parallel_procs = []
-        self.tmpdir = data_dir.get_tmp_dir()
         os.chdir(self.tmpdir)
         # This is the reference copy of the linux tarball
         # that will be used for subsequent comparisons
         self.log.info('Unpacking base copy')
-        self.base_dir = os.path.join(self.tmpdir, 'linux.orig')
         archive.extract(self.tarball, self.base_dir)
         self.log.info('Unpacking test copies')
         for j in range(self.sim_cps):
             tmp_dir = 'linux.%s' % j
             if self.parallel:
-                os.mkdir(tmp_dir)
+                if not os.path.exists(tmp_dir):
+                    os.makedirs(tmp_dir)
                 # Start parallel process
                 tar_cmd = 'tar jxf ' + self.tarball + ' -C ' + tmp_dir
                 self.log.info("Unpacking tarball to %s", tmp_dir)
@@ -140,7 +152,7 @@ class DmaMemtest(Test):
                 try:
                     self.log.info('Comparing linux.orig with %s', tmp_dir)
                     process.system('diff -U3 -rN linux.orig linux.%s' % j)
-                except process.CmdError, error:
+                except process.CmdError as error:
                     self.nfail += 1
                     self.log.info('Error comparing trees: %s', error)
 
@@ -150,7 +162,8 @@ class DmaMemtest(Test):
             proc.wait()
             if out_buf != "":
                 self.nfail += 1
-                self.log.error('Error comparing trees: %s', out_buf)
+                self.log.error('Error when comparing test with base copies in'
+                               'parallel')
 
         # Clean up for the next iteration
         parallel_procs = []

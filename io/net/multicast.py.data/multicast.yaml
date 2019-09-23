@@ -1,0 +1,6 @@
+Parameters:
+    peer_ip: ""
+    user_name: "root"
+    interface: ""
+    peer_password: "passw0rd"
+    count: "500000"

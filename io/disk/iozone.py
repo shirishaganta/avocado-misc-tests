@@ -416,17 +416,20 @@ class IOZone(Test):
         '''
 
         self.base_dir = os.path.abspath(self.basedir)
-
+        smm = SoftwareManager()
+        for package in ['gcc', 'make', 'patch']:
+            if not smm.check_installed(package) and not smm.install(package):
+                self.cancel("%s is needed for the test to be run" % package)
         tarball = self.fetch_asset(
             'http://www.iozone.org/src/current/iozone3_434.tar')
-        archive.extract(tarball, self.srcdir)
+        archive.extract(tarball, self.teststmpdir)
         version = os.path.basename(tarball.split('.tar')[0])
-        self.srcdir = os.path.join(self.srcdir, version)
+        self.sourcedir = os.path.join(self.teststmpdir, version)
 
-        make_dir = os.path.join(self.srcdir, 'src', 'current')
+        make_dir = os.path.join(self.sourcedir, 'src', 'current')
         os.chdir(make_dir)
         patch = self.params.get('patch', default='makefile.patch')
-        patch = os.path.join(self.datadir, patch)
+        patch = self.get_data(patch)
         process.run('patch -p3 < %s' % patch, shell=True)
 
         d_distro = distro.detect()
@@ -527,14 +530,13 @@ class IOZone(Test):
                             result = match.group(1)
                             key_name = "%s-%d-%s" % (section, w_count, basekey)
                             keylist[key_name] = result
-        output_path = os.path.join(self.outputdir, "perf.json")
-        json.dump(keylist, open(output_path, "w"), indent=1)
+        self.whiteboard = json.dumps(keylist, indent=1)
 
     def test(self):
         '''
         Test method for performing IOZone test and analysis.
         '''
-        directory = self.params.get('directory', default=None)
+        directory = self.params.get('dir', default=None)
         args = self.params.get('args', default=None)
         previous_results = self.params.get('previous_results', default=None)
 
@@ -545,7 +547,7 @@ class IOZone(Test):
         if not args:
             args = '-a'
 
-        cmd = os.path.join(self.srcdir, 'src', 'current', 'iozone')
+        cmd = os.path.join(self.sourcedir, 'src', 'current', 'iozone')
         self.results = process.system_output('%s %s' % (cmd, args))
         self.auto_mode = ("-a" in args)
         results_path = os.path.join(self.outputdir,

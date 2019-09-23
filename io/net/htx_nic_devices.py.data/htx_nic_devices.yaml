@@ -1,0 +1,10 @@
+mdt_file: 'net.mdt'
+host_public_ip: x.xx.xxx.xx
+peer_public_ip: x.xx.xxx.xy
+peer_password: "*******"
+peer_user: "root"
+host_interfaces: ""
+peer_interfaces: ""
+net_ids: ""
+# time limit in minutes
+time_limit: 2

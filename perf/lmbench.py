@@ -45,47 +45,47 @@ class Lmbench(Test):
         '''
         fsdir = self.params.get('fsdir', default=None)
         temp_file = self.params.get('temp_file', default=None)
+        memory_size_mb = self.params.get('MB', default=125)
         self.tmpdir = tempfile.mkdtemp(prefix='avocado_' + __name__)
         smm = SoftwareManager()
-        if not smm.check_installed("gcc") and not smm.install("gcc"):
-            self.error("Gcc is needed for the test to be run")
+        for package in ['gcc', 'make', 'patch']:
+            if not smm.check_installed(package) and not smm.install(package):
+                self.cancel("%s is needed for the test to be run" % package)
         tarball = self.fetch_asset('http://www.bitmover.com'
                                    '/lmbench/lmbench3.tar.gz')
-        data_dir = os.path.abspath(self.datadir)
-        archive.extract(tarball, self.srcdir)
+        archive.extract(tarball, self.workdir)
         version = os.path.basename(tarball.split('.tar.')[0])
-        self.srcdir = os.path.join(self.srcdir, version)
+        self.sourcedir = os.path.join(self.workdir, version)
 
         # Patch for lmbench
 
-        os.chdir(self.srcdir)
+        os.chdir(self.sourcedir)
 
-        makefile_patch = 'patch -p1 < %s' % (
-            os.path.join(data_dir, 'makefile.patch'))
-        build_patch = 'patch -p1 < %s' % (os.path.join(
-            data_dir, '0001-Fix-build-issues-with-lmbench.patch'))
-        lmbench_fix_patch = 'patch -p1 < %s' % (os.path.join(
-            data_dir, '0002-Changing-shebangs-on-lmbench-scripts.patch'))
-        ostype_fix_patch = 'patch -p1 < %s' % (
-            os.path.join(data_dir, 'fix_add_os_type.patch'))
+        makefile_patch = 'patch -p1 < %s' % self.get_data('makefile.patch')
+        build_patch = 'patch -p1 < %s' % self.get_data(
+            '0001-Fix-build-issues-with-lmbench.patch')
+        lmbench_fix_patch = 'patch -p1 < %s' % self.get_data(
+            '0002-Changing-shebangs-on-lmbench-scripts.patch')
+        ostype_fix_patch = 'patch -p1 < %s' % self.get_data(
+            'fix_add_os_type.patch')
 
         process.run(makefile_patch, shell=True)
         process.run(build_patch, shell=True)
         process.run(lmbench_fix_patch, shell=True)
         process.run(ostype_fix_patch, shell=True)
 
-        build.make(self.srcdir)
+        build.make(self.sourcedir)
 
         # configure lmbench
-        os.chdir(self.srcdir)
+        os.chdir(self.sourcedir)
 
-        os.system('yes "" | make config')
+        process.system('yes "" | make config', shell=True, ignore_status=True)
 
         # find the lmbench config file
         output = os.popen('ls -1 bin/*/CONFIG*').read()
         config_files = output.splitlines()
         if len(config_files) != 1:
-            raise error.TestError('Config not found : % s' % config_files)
+            self.error('Config not found : % s' % config_files)
         config_file = config_files[0]
         if not fsdir:
             fsdir = self.tmpdir
@@ -94,17 +94,31 @@ class Lmbench(Test):
 
         # patch the resulted config to use the proper temporary directory and
         # file locations
-        tmp_config_file = config_file + '.tmp'
-        process.system('touch ' + tmp_config_file)
-        process.system("sed 's!^FSDIR=.*$!FSDIR=%s!' '%s'  '%s' " %
-                       (fsdir, config_file, tmp_config_file))
-        process.system("sed 's!^FILE=.*$!FILE=%s!' '%s'  '%s'" %
-                       (temp_file, tmp_config_file, config_file))
+        with open(config_file, "r+") as cfg_file:
+            lines = cfg_file.readlines()
+            cfg_file.seek(0)
+            cfg_file.truncate()
+            for line in lines:
+                if line.startswith("FSDIR="):
+                    cfg_file.write("FSDIR=%s\n" % fsdir)
+                elif line.startswith("FILE="):
+                    cfg_file.write("FILE=%s\n" % temp_file)
+                elif line.startswith("MB="):
+                    cfg_file.write("MB=%s\n" % memory_size_mb)
+                else:
+                    cfg_file.write(line)
+            # Printing the config file
+            cfg_file.seek(0)
+            for line in cfg_file.readlines():
+                print(line)
 
     def test(self):
 
-        os.chdir(self.srcdir)
-        build.make(self.srcdir, extra_args='rerun')
+        os.chdir(self.sourcedir)
+        build.make(self.sourcedir, extra_args='rerun')
+        build.make(self.sourcedir, extra_args='rerun')
+        build.make(self.sourcedir, extra_args='see')
+
 
 if __name__ == "__main__":
     main()

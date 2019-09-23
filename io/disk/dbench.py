@@ -47,21 +47,21 @@ class Dbench(Test):
         http://samba.org/ftp/tridge/dbench/dbench-3.04.tar.gz
         '''
         sm = SoftwareManager()
-        if not sm.check_installed("gcc") and not sm.install("gcc"):
-            self.error('Gcc is needed for the test to be run')
+        for pkg in ["gcc", "patch"]:
+            if not sm.check_installed(pkg) and not sm.install(pkg):
+                self.error('%s is needed for the test to be run' % pkg)
 
         self.results = []
-        data_dir = os.path.abspath(self.datadir)
         tarball = self.fetch_asset(
             'http://samba.org/ftp/tridge/dbench/dbench-3.04.tar.gz')
-        archive.extract(tarball, self.srcdir)
+        archive.extract(tarball, self.teststmpdir)
         cb_version = os.path.basename(tarball.split('.tar.')[0])
-        self.srcdir = os.path.join(self.srcdir, cb_version)
-        os.chdir(self.srcdir)
+        self.sourcedir = os.path.join(self.teststmpdir, cb_version)
+        os.chdir(self.sourcedir)
         patch = self.params.get('patch', default='dbench_startup.patch')
-        process.run('patch -p1 < %s' % data_dir + '/' + patch, shell=True)
+        process.run('patch -p1 < %s' % self.get_data(patch), shell=True)
         process.run('./configure')
-        build.make(self.srcdir)
+        build.make(self.sourcedir)
 
     def test(self):
         '''
@@ -73,17 +73,18 @@ class Dbench(Test):
         args = self.params.get('args', default='')
         if not nprocs:
             nprocs = multiprocessing.cpu_count()
-        loadfile = os.path.join(self.srcdir, 'client.txt')
-        cmd = '%s/dbench %s %s -D %s -c %s -t %d' % (self.srcdir, nprocs, args,
-                                                     dir, loadfile, seconds)
+        loadfile = os.path.join(self.sourcedir, 'client.txt')
+        cmd = '%s/dbench %s %s -D %s -c %s -t %d' % (self.sourcedir, nprocs,
+                                                     args, dir, loadfile,
+                                                     seconds)
         process.run(cmd)
 
         self.results = process.system_output(cmd)
         pattern = re.compile(r"Throughput (.*?) MB/sec (.*?) procs")
         (throughput, procs) = pattern.findall(self.results)[0]
-        perf_json = {'throughput': throughput, 'procs': procs}
-        output_path = os.path.join(self.outputdir, "perf.json")
-        json.dump(perf_json, open(output_path, "w"))
+        self.whiteboard = json.dumps({'throughput': throughput,
+                                      'procs': procs})
+
 
 if __name__ == "__main__":
     main()

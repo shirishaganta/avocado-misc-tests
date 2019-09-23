@@ -19,6 +19,7 @@
 
 import os
 import fnmatch
+import shutil
 
 from avocado import Test
 from avocado import main
@@ -26,6 +27,7 @@ from avocado import main
 from avocado.utils import archive
 from avocado.utils import build
 from avocado.utils import process
+from avocado.utils import distro
 
 from avocado.utils.software_manager import SoftwareManager
 
@@ -43,59 +45,55 @@ class Binutils(Test):
         """
         if (not self._sm.check_installed(package) and
                 not self._sm.install(package)):
-            self._needed_deps.append(package)
+            self.cancel('Please install %s for the test to run' % self.package)
 
     def setUp(self):
         # Check for basic utilities
         self._sm = SoftwareManager()
 
         # Install required tools and resolve dependencies
-        self._needed_deps = []
-
-        self.check_install('rpmbuild')
-        self.check_install('elfutils')
-        self.check_install('build')
-        self.check_install('autoconf')
-        self.check_install('automake')
-        self.check_install('binutils-devel')
-        self.check_install('djangu')
-        self.check_install('libtool')
-        self.check_install('glibc-static')
-        self.check_install('zlib-static')
-
-        if len(self._needed_deps) > 0:
-            self.log.warn('Please install these dependencies %s'
-                          % self._needed_deps)
-
+        needed_deps = ['make', 'gcc', 'dejagnu',
+                       'elfutils', 'autoconf', 'automake']
+        dist = distro.detect()
+        if dist.name.lower() == 'ubuntu':
+            needed_deps.extend(['build-essential'])
+        for pkg in needed_deps:
+            self.check_install(pkg)
+        run_type = self.params.get("type", default="upstream")
         # Extract - binutils
         # Source: https://ftp.gnu.org/gnu/binutils/binutils-2.26.tar.bz2
-        locations = ['https://ftp.gnu.org/gnu/binutils/binutils-2.26.tar.bz2',
-                     "ftp://ftp.fi.muni.cz/pub/gnu/gnu/binutils/"
-                     "binutils-2.26.tar.bz2"]
-        tarball = self.fetch_asset("binutils-2.26.tar.bz2",
-                                   locations=locations)
-        archive.extract(tarball, self.srcdir)
-
-        bintools_version = os.path.basename(tarball.split('.tar.')[0])
-        self.src_dir = os.path.join(self.srcdir, bintools_version)
+        if run_type == "upstream":
+            version = self.params.get('binutils_version', default='2.27')
+            locations = [
+                "https://www.mirrorservice.org/sites/sourceware.org"
+                "/pub/binutils/releases/binutils-%s.tar.bz2" % version]
+            tarball = self.fetch_asset("binutils-%s.tar.bz2" % version,
+                                       locations=locations)
+            archive.extract(tarball, self.workdir)
+            self.sourcedir = os.path.join(
+                self.workdir, os.path.basename(tarball.split('.tar.')[0]))
+        elif run_type == "distro":
+            self.sourcedir = os.path.join(self.workdir, "binutils-distro")
+            if not os.path.exists(self.sourcedir):
+                self.sourcedir = self._sm.get_source("binutils", self.sourcedir)
 
         # Compile the binutils
-        os.chdir(self.src_dir)
+        os.chdir(self.sourcedir)
         process.run('./configure')
-        build.make(self.src_dir)
+        build.make(self.sourcedir)
 
     def test(self):
         """
         Runs the binutils `make check`
         """
-        ret = build.make(self.src_dir, extra_args='check', ignore_status=True)
+        ret = build.make(self.sourcedir, extra_args='check', ignore_status=True)
 
         errors = 0
-        for root, _, filenames in os.walk(self.src_dir):
+        for root, _, filenames in os.walk(self.sourcedir):
             for filename in fnmatch.filter(filenames, '*.log'):
                 filename = os.path.join(root, filename)
                 logfile = filename[:-4] + ".log"
-                os.system('cp ' + logfile + ' ' + self.logdir)
+                shutil.copy(logfile, self.logdir)
                 with open(logfile) as result:
                     for line in result.readlines():
                         if line.startswith('FAIL'):

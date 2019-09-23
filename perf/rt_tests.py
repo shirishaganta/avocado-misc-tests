@@ -39,29 +39,32 @@ class rt_tests(Test):
         sm = SoftwareManager()
         detected_distro = distro.detect()
         deps = ["gcc", "make"]
-        if detected_distro.name == "Suse":
+        if detected_distro.name == "SuSE":
             deps.append("git-core")
         else:
             deps.append("git")
         if detected_distro.name == "Ubuntu":
             deps.append("build-essential")
             deps.append("libnuma-dev")
-        elif detected_distro.name == "redhat":
+        elif detected_distro.name in ['centos', 'fedora', 'rhel', 'redhat']:
             deps.append("numactl-devel")
         for package in deps:
             if not sm.check_installed(package) and not sm.install(package):
-                self.error(package + ' is needed for the test to be run')
-        locations = ["https://kernel.googlesource.com/pub/scm/utils/rt-tests/"
-                     "rt-tests/+archive/master.tar.gz"]
-        tarball = self.fetch_asset("rt-tests.tar.gz", locations=locations)
-        archive.extract(tarball, self.srcdir)
-        build.make(self.srcdir)
+                self.cancel('%s is needed for the test to be run' % package)
+        tarball = self.fetch_asset(
+            "https://www.kernel.org/pub/linux/utils/rt-tests/"
+            "rt-tests-1.0.tar.gz")
+        archive.extract(tarball, self.workdir)
+        self.sourcedir = os.path.join(
+            self.workdir, os.path.basename(tarball.split('.tar.')[0]))
+        build.make(self.sourcedir)
 
     def test(self):
         test_to_run = self.params.get('test_to_run', default='signaltest')
         args = self.params.get('args', default=' -t 10 -l 100000')
-        process.system("%s %s" % (os.path.join(self.srcdir, test_to_run), args),
+        process.system("%s %s" % (os.path.join(self.sourcedir, test_to_run), args),
                        sudo=True)
+
 
 if __name__ == "__main__":
     main()

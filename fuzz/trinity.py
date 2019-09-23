@@ -38,63 +38,70 @@ class Trinity(Test):
         https://github.com/kernelslacker/trinity
         '''
         """
-        Add not root user
+        Adding  non-root user
         """
-        process.run('groupadd trinity', sudo=True)
-        process.run(
-            'useradd -g trinity  -m -d /home/trinity  trinity', sudo=True)
+        if process.system('getent group trinity', ignore_status=True):
+            process.run('groupadd trinity', sudo=True)
+        if process.system('getent passwd trinity', ignore_status=True):
+            process.run(
+                'useradd -g trinity  -m -d /home/trinity  trinity', sudo=True)
         process.run('usermod -a -G trinity  trinity', sudo=True)
 
         smm = SoftwareManager()
 
         for package in ("gcc", "make"):
             if not smm.check_installed(package) and not smm.install(package):
-                self.error(
+                self.cancel(
                     "Fail to install %s required for this test." % package)
 
         locations = ["https://github.com/kernelslacker/trinity/archive/"
                      "master.zip"]
         tarball = self.fetch_asset("trinity.zip", locations=locations,
                                    expire='7d')
-        archive.extract(tarball, self.srcdir)
-        self.srcdir = os.path.join(self.srcdir, 'trinity-master')
+        archive.extract(tarball, self.workdir)
+        self.sourcedir = os.path.join(self.workdir, 'trinity-master')
 
-        os.chdir(self.srcdir)
+        os.chdir(self.sourcedir)
 
-        process.run('chmod -R  +x ' + self.srcdir)
+        process.run('chmod -R  +x ' + self.sourcedir)
         process.run('./configure', shell=True)
         build.make('.')
         process.run('touch trinity.log')
-        process.run('cp -r ' + self.srcdir + ' /home/trinity')
-        self.srcdir = os.path.join('/home/trinity', 'trinity-master')
+        process.run('cp -r ' + self.sourcedir + ' /home/trinity')
+        self.sourcedir = os.path.join('/home/trinity', 'trinity-master')
 
-        process.run('chown -R trinity:trinity ' + self.srcdir)
+        process.run('chown -R trinity:trinity ' + self.sourcedir)
 
     def test(self):
         '''
         Trinity need to run as non root user
         '''
 
-        args = self.params.get('runarg', default=' ')
+        args = self.params.get('runargs', default=' ')
 
-        process.system('su - trinity -c " %s  %s  %s"' %
-                       (os.path.join(self.srcdir, 'trinity'), args,
-                        '-N 1000000'), shell=True)
+        if process.system('su - trinity -c " %s  %s  %s"' %
+                          (os.path.join(self.sourcedir, 'trinity'), args,
+                           '-N 1000000'), shell=True, ignore_status=True):
+            self.fail("trinity  command line  return as non zero exit code ")
 
         dmesg = process.system_output('dmesg')
 
         # verify if system having issue after fuzzer run
 
-        match = re.search(r'unhandled', dmesg, re.M | re.I)
+        match = re.search(br'unhandled', dmesg, re.M | re.I)
         if match:
             self.log.info("Testcase failure as segfault")
-        match = re.search(r'Call Trace:', dmesg, re.M | re.I)
+        match = re.search(br'Call Trace:', dmesg, re.M | re.I)
         if match:
             self.log.info("some call traces seen please check")
 
     def tearDown(self):
+        """
+        removing already added non-root user
+        """
 
-        process.system('userdel -r  trinity', sudo=True)
+        process.system('userdel -r  trinity', sudo=True, ignore_status=True)
+
 
 if __name__ == "__main__":
     main()

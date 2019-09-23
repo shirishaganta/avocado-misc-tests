@@ -24,7 +24,7 @@ from avocado import Test
 from avocado import main
 from avocado.utils import archive
 from avocado.utils import process
-from avocado.utils import build
+from avocado.utils import build, disk, memory
 from avocado.utils.software_manager import SoftwareManager
 
 
@@ -44,30 +44,35 @@ class Interbench(Test):
         http://ck.kolivas.org/apps/interbench/interbench-0.31.tar.bz2
         '''
         sm_manager = SoftwareManager()
-        if (not sm_manager.check_installed("gcc") and not
-                sm_manager.install("gcc")):
-            self.error("Gcc is needed for the test to be run")
-        tarball = self.fetch_asset('http://ck.kolivas.org'
-                                   '/apps/interbench/'
-                                   'interbench-0.31.tar.bz2')
-        data_dir = os.path.abspath(self.datadir)
-        archive.extract(tarball, self.srcdir)
+        for pkg in ['gcc', 'patch']:
+            if (not sm_manager.check_installed(pkg) and not
+                    sm_manager.install(pkg)):
+                self.cancel("%s is needed for the test to be run" % pkg)
+
+        disk_free_b = disk.freespace(self.teststmpdir)
+        if memory.meminfo.MemTotal.b > disk_free_b:
+            self.cancel('Disk space is less than total memory. Skipping test')
+
+        tarball = self.fetch_asset('http://slackware.cs.utah.edu/pub/kernel'
+                                   '.org/pub/linux/kernel/people/ck/apps/'
+                                   'interbench/interbench-0.31.tar.gz')
+        archive.extract(tarball, self.workdir)
         version = os.path.basename(tarball.split('.tar.')[0])
-        self.srcdir = os.path.join(self.srcdir, version)
+        self.sourcedir = os.path.join(self.workdir, version)
 
         # Patch for make file
-        os.chdir(self.srcdir)
-        makefile_patch = 'patch -p1 < %s ' % (
-            os.path.join(data_dir, 'makefile_fix.patch'))
+        os.chdir(self.sourcedir)
+        makefile_patch = 'patch -p1 < %s ' % self.get_data('makefile_fix.patch')
         process.run(makefile_patch, shell=True)
 
-        build.make(self.srcdir)
+        build.make(self.sourcedir)
 
     def test(self):
         args = self.params.get('arg', default='')
         args += ' c'
         process.system("%s ' run ' %s" % (os.path.join(
-            self.srcdir, 'interbench'), args), sudo=True)
+            self.sourcedir, 'interbench'), args), sudo=True)
+
 
 if __name__ == "__main__":
     main()

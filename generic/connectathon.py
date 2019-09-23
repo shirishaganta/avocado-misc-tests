@@ -62,23 +62,22 @@ class Connectathon(Test):
 
         for package in packages:
             if not smm.check_installed(package) and not smm.install(package):
-                self.error("Fail to install %s required for this test." %
-                           package)
+                self.cancel("Fail to install %s required for this test." %
+                            package)
 
         self.tmpdir = tempfile.mkdtemp(prefix='avocado_' + __name__)
-        data_dir = os.path.abspath(self.datadir)
         git.get_repo('git://git.linux-nfs.org/projects/steved/cthon04.git',
-                     destination_dir=self.srcdir)
-        os.chdir(self.srcdir)
+                     destination_dir=self.workdir)
+        os.chdir(self.workdir)
 
-        build.make(self.srcdir)
+        build.make(self.workdir)
 
     def test(self):
 
         args = self.params.get('arg', default='')
         cthon_iterations = self.params.get('cthon_iterations', default=1)
         testdir = self.params.get('testdir', default=None)
-        os.chdir(self.srcdir)
+        os.chdir(self.workdir)
 
         if testdir is None:
             testdir = self.tmpdir
@@ -90,9 +89,9 @@ class Connectathon(Test):
             process.system('./runtests -N %s %s %s' %
                            (cthon_iterations, args, testdir), shell=True)
 
-        except:
+        except Exception:
             self.nfail += 1
-            logging.error("Test failed: ")
+            self.log.info("Test failed: ")
         if self.nfail != 0:
             raise self.fail('Connectathon test suite failed.')
 

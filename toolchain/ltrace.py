@@ -41,46 +41,50 @@ class Ltrace(Test):
         that needs to be installed, if not installed test will stop.
         """
 
-        backend = SoftwareManager()
+        smm = SoftwareManager()
         dist = distro.detect()
+        dist_name = dist.name.lower()
 
-        if not backend.check_installed("gcc") and not backend.install("gcc"):
-            self.error("gcc is needed for the test to be run")
+        packages = ['gcc', 'wget', 'autoconf', 'automake',
+                    'dejagnu', 'binutils', 'patch']
 
-        pkgs = ['git', 'wget', 'autoconf', 'automake',
-                'dejagnu', 'binutils']
+        if dist_name == 'suse':
+            packages.extend(['libdw-devel', 'libelf-devel', 'git-core',
+                             'elfutils', 'binutils-devel', 'libtool', 'gcc-c++'])
 
-        if dist.name == 'sles':
-            sles_deps = ['build', 'libdw-devel', 'libelf-devel',
-                         'elfutils', 'binutils-devel', 'libtool', 'gcc-c++']
-            pkgs += sles_deps
+        # FIXME: "redhat" as the distro name for RHEL is deprecated
+        # on Avocado versions >= 50.0.  This is a temporary compatibility
+        # enabler for older runners, but should be removed soon
+        elif dist_name in ("rhel", "fedora", "redhat"):
+            packages.extend(['elfutils-devel', 'elfutils-libelf-devel', 'git',
+                             'elfutils-libelf', 'elfutils-libs', 'libtool-ltdl'])
 
-        elif dist.name in ("redhat", "fedora"):
-            rhel_deps = ['elfutils-devel', 'elfutils-libelf-devel',
-                         'elfutils-libelf', 'elfutils-libs', 'libtool-ltdl']
-            pkgs += rhel_deps
-
-        elif dist.name == 'ubuntu':
-            ubuntu_deps = ['elfutils', 'libelf-dev', 'libtool',
-                           'libelf1', 'librpmbuild3', 'binutils-dev']
-            pkgs += ubuntu_deps
+        elif dist_name == 'ubuntu':
+            packages.extend(['elfutils', 'libelf-dev', 'libtool', 'git',
+                             'libelf1', 'librpmbuild3', 'binutils-dev'])
         else:
-            self.log.warn("Unsupported OS!")
+            self.cancel("Unsupported OS!")
 
-        for pkg in pkgs:
-            if not backend.check_installed(pkg):
-                if backend.install(pkg):
-                    self.log.warn("%s installed successfully", pkg)
-                else:
-                    self.error("Fail to install package- %s required for "
-                               "this test" % pkg)
+        for package in packages:
+            if not smm.check_installed(package) and not smm.install(package):
+                self.cancel("Fail to install %s required for this test." %
+                            package)
+        run_type = self.params.get("type", default="upstream")
+        if run_type == "upstream":
+            source = self.params.get('url', default="git://git.debian.org/git/"
+                                     "collab-maint/ltrace.git")
+            git.get_repo(source, destination_dir=os.path.join(
+                self.workdir, 'ltrace'))
 
-        # Source: git clone git://git.debian.org/git/collab-maint/ltrace.git
-        git.get_repo('git://git.debian.org/git/collab-maint/ltrace.git',
-                     destination_dir=os.path.join(self.srcdir, 'ltrace'))
+            self.src_lt = os.path.join(self.workdir, "ltrace")
+            os.chdir(self.src_lt)
+            process.run('patch -p1 < %s' % self.get_data('ltrace.patch'), shell=True)
+        elif run_type == "distro":
+            self.src_lt = os.path.join(self.workdir, "ltrace-distro")
+            if not os.path.exists(self.src_lt):
+                self.src_lt = smm.get_source("ltrace", self.src_lt)
+            os.chdir(self.src_lt)
 
-        self.src_lt = os.path.join(self.srcdir, "ltrace")
-        os.chdir(self.src_lt)
         process.run('./autogen.sh')
         process.run('./configure')
         build.make(self.src_lt)

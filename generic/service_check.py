@@ -17,6 +17,7 @@
 # Besed on the Sample Idea from:
 # https://github.com/autotest/virt-test/blob/master/samples/service.py
 
+import os
 import ConfigParser
 from avocado import Test
 from avocado import main
@@ -24,6 +25,7 @@ from avocado.utils import process
 from avocado.utils.service import SpecificServiceManager
 from avocado.utils import distro
 from avocado.utils.wait import wait_for
+from avocado.utils.software_manager import SoftwareManager
 
 
 class service_check(Test):
@@ -31,9 +33,33 @@ class service_check(Test):
     def test(self):
         detected_distro = distro.detect()
         parser = ConfigParser.ConfigParser()
-        config_file = self.datadir + '/services.cfg'
-        parser.read(config_file)
+        parser.read(self.get_data('services.cfg'))
         services_list = parser.get(detected_distro.name, 'services').split(',')
+
+        smm = SoftwareManager()
+        deps = []
+
+        if detected_distro.name == 'SuSE':
+            deps.extend(['ppc64-diag', 'libvirt-daemon'])
+            if detected_distro.version >= 15:
+                services_list.append('firewalld')
+            else:
+                services_list.append('SuSEfirewall2')
+        elif detected_distro.name == 'Ubuntu':
+            deps.extend(['opal-prd'])
+            if detected_distro.version >= 17:
+                services_list.remove('networking')
+
+        for package in deps:
+            if not smm.check_installed(package) and not smm.install(package):
+                self.cancel(' %s is needed for the test to be run' % package)
+
+        if 'PowerNV' in open('/proc/cpuinfo', 'r').read():
+            services_list.extend(['opal_errd', 'opal-prd'])
+            if os.path.exists('/proc/device-tree/bmc'):
+                services_list.remove('opal_errd')
+        else:
+            services_list.extend(['rtas_errd'])
         services_failed = []
         runner = process.run
 
@@ -64,12 +90,13 @@ class service_check(Test):
             if not service_obj.status() is original_status:
                 self.log.info("Fail to restore original status of the %s"
                               "service" % service)
-                services_failed.append(services)
+                services_failed.append(service)
 
         if services_failed:
             self.fail("List of services failed: %s" % services_failed)
         else:
             self.log.info("All Services Passed the ON/OFF test")
+
 
 if __name__ == "__main__":
     main()

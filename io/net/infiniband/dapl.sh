@@ -21,32 +21,12 @@
 
 PATH=$(avocado "exec-path"):$PATH
 
-# Install dependencies
-if [[ `python -c 'from avocado.utils.software_manager import SoftwareManager; \
-   print SoftwareManager().install("dapl*")'` == 'False' ]]
-then
-    avocado_debug 'Dapl Packages not installed'
-    exit
-fi
-
-# Load Modules
-modules=(ib_uverbs ib_ucm ib_cm ib_mad ib_sa ib_umad ib_addr rdma_cm rdma_ucm \
-    ib_core mlx4_core mlx5_core mlx5_ib ib_ipoib mlx4_en mlx4_ib)
-for i in "${modules[@]}"; do
-    modprobe $i
-done
-
 # Parsing Input
-CONFIG_FILE="$AVOCADO_TEST_DATADIR"/config
-params=(DAPL_IF1 DAPL_IF2 PEER_IP)
-for i in "${params[@]}"; do
-    eval $(cat $CONFIG_FILE | grep -w $i)
-done
 host_param=$(eval "echo $HOST_PARAM")
 peer_param=$(eval "echo $PEER_PARAM")
 
 # Timeout
-timeout=2m
+timeout=6m
 
 # Runs dapltest on client and server
 dapl_exec()
@@ -54,10 +34,10 @@ dapl_exec()
     if [[ "$3" == "" ]]; then
         avocado_info "Client specific run for $1($2)"
         avocado_debug "$1 $2"
-        timeout $timeout $1 $2 || { echo "Client specific run failed"; exit 1; }
+        timeout $timeout $1 $2 || { echo "Client specific run failed"; exit 1;}
     else
         avocado_info "Client data for $1($3)"
-        ssh $PEER_IP "timeout $timeout $1 $2  > /tmp/ib_log 2>&1 &" || \
+        ssh $peer_ip "timeout $timeout $1 $2  > /tmp/ib_log 2>&1 &" || \
             { echo "Peer run failed"; exit 1; }
 
         sleep 5
@@ -67,19 +47,20 @@ dapl_exec()
         sleep 5
         avocado_info "Server data for $1($2)"
         avocado_debug "$1 $2"
-        ssh $PEER_IP "timeout $timeout cat /tmp/ib_log; rm -rf /tmp/ib_log"
+        ssh $peer_ip "timeout $timeout cat /tmp/ib_log; rm -rf /tmp/ib_log"
     fi
 }
 
 # Parses the input values and calls dapl_exec() to execute dapltest
 testdapl()
 {
-    if [[ $DAPL_IF1 != "" ]] && [[ $DAPL_IF2 != "" ]]; then
-        if type "dapltest" > /dev/null
+    if [[ $dapl_interface != "" ]] && [[ $dapl_peer_interface != "" ]]; then
+        if type "dapltest" > /dev/null || [[ `python -c 'from avocado.utils.software_manager import SoftwareManager; \
+               print SoftwareManager().install("dapl*")'` == 'True' ]]
         then
-            dapl_exec dapltest "$host_param" "$peer_param"
+            dapl_exec dapltest "$peer_param" "$host_param"
         else
-            avocado_debug "Cmd dapltest doesn't exist, Test will be skipped"
+            avocado_debug "Dapl Packages could not be installed, Test will be skipped"
             exit 1
         fi
     else
@@ -88,6 +69,4 @@ testdapl()
 }
 
 # MAIN
-
 testdapl
-exit 0

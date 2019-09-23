@@ -29,6 +29,8 @@ class Tlbflush(Test):
 
     """
     This is a macrobenchmark for TLB flush range testing.
+
+    :avocado: tags=kernel
     """
 
     def setUp(self):
@@ -40,20 +42,15 @@ class Tlbflush(Test):
         # Check for basic utilities
 
         smm = SoftwareManager()
+        for package in ['gcc', 'make', 'patch']:
+            if not smm.check_installed(package) and not smm.install(package):
+                self.cancel("%s is needed for this test." % package)
 
-        if not smm.check_installed("gcc") and not smm.install("gcc"):
-            self.error(
-                "Fail to install %s required for this test." % package)
+        shutil.copyfile(self.get_data('tlbflush.c'),
+                        os.path.join(self.workdir, 'tlbflush.c'))
 
-        data_dir = os.path.abspath(self.datadir)
-
-        shutil.copyfile(os.path.join(data_dir, 'tlbflush.c'),
-                        os.path.join(self.srcdir, 'tlbflush.c'))
-
-        os.chdir(self.srcdir)
-        os.system('cp tlbflush.c /root/pp/tlbflush.c')
-        tlbflush_patch = 'patch -p1 < %s' % (
-            os.path.join(data_dir, 'tlbflush.patch'))
+        os.chdir(self.workdir)
+        tlbflush_patch = 'patch -p1 < %s' % self.get_data('tlbflush.patch')
 
         process.run(tlbflush_patch, shell=True)
         cmd = 'gcc -DFILE_SIZE=$((128*1048576)) -g -O2 tlbflush.c \
@@ -79,13 +76,11 @@ class Tlbflush(Test):
 
             out = self.run()
             self.perf_json.append({'Test time' + str(ite): out})
-
-        output_path = os.path.join(self.outputdir, "perf.json")
-        json.dump(self.perf_json, open(output_path, "w"))
+        self.whiteboard = json.dumps(self.perf_json)
 
     def run(self):
 
-        tlbflush = os.path.join(self.srcdir, 'tlbflush')
+        tlbflush = os.path.join(self.workdir, 'tlbflush')
 
         cmd = '%s -n %s -t %s' % (tlbflush, self.nr_entries, self.nr_threads)
 
